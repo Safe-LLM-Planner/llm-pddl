@@ -11,3 +11,4 @@ clean.sh
 check.sh
 condor*
 keys
+.env/
