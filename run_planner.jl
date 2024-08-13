@@ -16,5 +16,4 @@ end
 
 # write down plan
 sol_str = join(["$(write_pddl(a))\n" for a in sol])
-sol_str *= "; cost = $(length(sol))"
-write(ARGS[3]*".1", sol_str)
+write(ARGS[3], sol_str)
