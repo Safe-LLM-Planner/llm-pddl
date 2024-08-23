@@ -12,3 +12,4 @@ check.sh
 condor*
 keys
 .env/
+experiments/
