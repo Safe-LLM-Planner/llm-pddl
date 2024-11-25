@@ -3,19 +3,23 @@
     
     (:types 
         location 
-        object 
-        electrical-object - object
+        item 
+        electrical-item - item
     )
 
     (:predicates 
         (robot-at ?l - location)
-        (at ?o - object ?l - location)
+        (at ?o - item ?l - location)
         (left-hand-empty)
         (right-hand-empty)
-        (holding-left ?o - object)   ; Object held in left hand
-        (holding-right ?o - object)  ; Object held in right hand
-        (holding-both ?o - object)  ; Object held in right hand
-        (plugged-in ?e - electrical-object)
+        (holding-left ?o - item)   ; Object held in left hand
+        (holding-right ?o - item)  ; Object held in right hand
+        (holding-both ?o - item)  ; Object held in right hand
+        (plugged-in ?e - electrical-item)
+    )
+
+    (:derived (holding ?o - item)
+        (or (holding-left ?o) (holding-right ?o) (holding-both ?o))
     )
 
     (:action go-to
@@ -27,7 +31,7 @@
     )
 
     (:action pick-left
-        :parameters (?obj - object ?l - location)
+        :parameters (?obj - item ?l - location)
         :precondition (and (at ?obj ?l) (robot-at ?l) (left-hand-empty))
         :effect (and (holding-left ?obj)         
                      (not (at ?obj ?l))
@@ -36,7 +40,7 @@
     )
 
     (:action pick-right
-        :parameters (?obj - object ?l - location)
+        :parameters (?obj - item ?l - location)
         :precondition (and (at ?obj ?l) (robot-at ?l) (right-hand-empty))
         :effect (and (holding-right ?obj)        
                      (not (at ?obj ?l))
@@ -45,7 +49,7 @@
     )
 
     (:action pick-both
-        :parameters (?obj - object ?l - location)
+        :parameters (?obj - item ?l - location)
         :precondition (and (at ?obj ?l) (robot-at ?l) (left-hand-empty) (right-hand-empty))
         :effect (and (holding-both ?obj)        
                      (not (at ?obj ?l))
@@ -55,7 +59,7 @@
     )
 
     (:action place-left
-        :parameters (?obj - object ?l - location)
+        :parameters (?obj - item ?l - location)
         :precondition (and (holding-left ?obj) (robot-at ?l))
         :effect (and (at ?obj ?l)
                      (left-hand-empty)
@@ -64,7 +68,7 @@
     )
 
     (:action place-right
-        :parameters (?obj - object ?l - location)
+        :parameters (?obj - item ?l - location)
         :precondition (and (holding-right ?obj) (robot-at ?l))
         :effect (and (at ?obj ?l)
                      (right-hand-empty)
@@ -73,7 +77,7 @@
     )
 
     (:action place-both
-        :parameters (?obj - object ?l - location)
+        :parameters (?obj - item ?l - location)
         :precondition (and (holding-both ?obj) (robot-at ?l))
         :effect (and (at ?obj ?l)
                      (left-hand-empty)
@@ -83,7 +87,7 @@
     )
 
     (:action unplug
-        :parameters (?e - electrical-object ?l - location)
+        :parameters (?e - electrical-item ?l - location)
         :precondition (and (at ?e ?l) (robot-at ?l) (plugged-in ?e))
         :effect (and (not (plugged-in ?e)))
     )
