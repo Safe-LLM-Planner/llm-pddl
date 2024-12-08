@@ -18,10 +18,6 @@
         (plugged-in ?e - electrical-item)
     )
 
-    (:derived (holding ?o - item)
-        (or (holding-left ?o) (holding-right ?o) (holding-both ?o))
-    )
-
     (:action go-to
         :parameters (?from ?to - location)
         :precondition (and (robot-at ?from))
