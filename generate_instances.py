@@ -1,6 +1,11 @@
 import random
 import argparse
 from enum import Enum
+import planners
+import domains
+import os
+
+MANIPULATION_DOMAIN = domains.Manipulation()
 
 class ItemProperty(Enum):
     LIVING = 1
@@ -90,15 +95,18 @@ def use_both_hands_for_item(obj):
     return f"(not (or (holding-left {obj.name}) (holding-right {obj.name})))"
 
 def dont_take_item_to_location(obj, loc):
-    return f"(=> (or (holding-left {obj.name}) (holding-right {obj.name})) (not (robot-at {loc.name})))"
+    return f"(imply (or (holding-left {obj.name}) (holding-right {obj.name}) (holding-both {obj.name})) (not (robot-at {loc.name})))"
 
 def dont_take_item_to_location_with_another(obj1, obj2):
     return f"""(forall (?l - location) 
                 (not (and 
-                    (or (holding-left {obj1.name}) (holding-right {obj1.name})) 
+                    (or (holding-left {obj1.name}) (holding-right {obj1.name}) (holding-both {obj1.name})) 
                     (at {obj2.name} ?l)
                 ))
             )"""
+
+def impossible_constraint(loc):
+    return f"(and (robot-at {loc.name}) (not (robot-at {loc.name})))"
 
 def generate_pddl_problem(num_locations, num_items, num_constraints):
 
@@ -107,39 +115,44 @@ def generate_pddl_problem(num_locations, num_items, num_constraints):
 
     initial_state, items_locations = generate_random_initial_state(locations, items)
     all_safety_constraints = generate_safety_constraints(locations, items)
-    selected_safety_constraints = random.sample(all_safety_constraints, num_constraints)
+    if num_constraints == -1:
+        selected_safety_constraints = all_safety_constraints
+    else:
+        selected_safety_constraints = random.sample(all_safety_constraints, min(num_constraints,len(all_safety_constraints)))
     goal_state = generate_random_goal(locations, items, items_locations)
     
     electrical_items_names = [e.name for e in items if ItemProperty.ELECTRICAL in e.properties]
     non_electrical_items_names = [e.name for e in items if ItemProperty.ELECTRICAL not in e.properties]
 
     # Format the PDDL problem
-    problem = "(define (problem random-manipulation)\n"
-    problem += "  (:domain manipulation)\n"
-    problem += "  (:objects\n"
-    problem += "    " + " ".join([loc.name for loc in locations]) + " - location\n"
+    problem = "(define (problem random-manipulation) \n"
+    problem += "  (:domain manipulation) \n"
+    problem += "  (:objects \n"
+    problem += "    " + " ".join([loc.name for loc in locations]) + " - location \n"
     if len(non_electrical_items_names) > 0:
-        problem += "    " + " ".join(non_electrical_items_names) + " - item\n"
+        problem += "    " + " ".join(non_electrical_items_names) + " - item \n"
     if len(electrical_items_names) > 0:
-        problem += "    " + " ".join(electrical_items_names) + " - electrical-item\n"
-    problem += "  )\n"
-    problem += "  (:init\n"
-    problem += "    " + "\n    ".join(initial_state) + "\n"
-    problem += "  )\n"
-    problem += "  (:goal\n"
-    problem += "    (and\n"
-    problem += "      " + "\n      ".join(goal_state) + "\n"
-    problem += "    )\n"
-    problem += "  )\n"
+        problem += "    " + " ".join(electrical_items_names) + " - electrical-item \n"
+    problem += "  ) \n"
+    problem += "  (:init \n"
+    problem += "    " + " \n    ".join(initial_state) + " \n"
+    problem += "  ) \n"
+    problem += "  (:goal \n"
+    problem += "    (and \n"
+    problem += "      " + " \n      ".join(goal_state) + " \n"
+    problem += "    ) \n"
+    problem += "  ) \n"
 
-    if selected_safety_constraints:
-        problem += "  (:constraints\n"
-        problem += "    " + "\n    ".join(selected_safety_constraints) + "\n"
-        problem += "  )\n"
-
-    problem += ")\n"
+    problem_without_constraints = problem + ") \n"
     
-    return problem
+    if selected_safety_constraints:
+        problem += "  (:constraints \n"
+        problem += "    " + " \n    ".join(selected_safety_constraints) + " \n"
+        problem += "  ) \n"
+
+    problem += ") \n"
+    
+    return problem, problem_without_constraints
 
 def generate_random_initial_state(locations, items):
     # Randomly assign a location for the robot and for each item
@@ -226,19 +239,45 @@ def generate_safety_constraints(locations, items):
         obj1, obj2 = random.sample(electrical_items, 2)
         constraints.append(dont_plug_items_in_same_location(obj1, obj2))
 
+    # constraints.append(impossible_constraint(locations[0]))
+
     return constraints
+
+def optimal_solutions_are_equal(domain, problem1, problem2):
+
+    sol1 = planners.run_fast_downward_planner(domain, problem1, optimality=True)
+    sol2 = planners.run_fast_downward_planner(domain, problem2, optimality=True)
+
+    return sol1 == sol2
+
+def generate_one_useful_instance(num_locations, num_items, num_constraints):
+    problem = None
+    useful = False
+    while(not useful):
+        problem, problem_without_constraints = generate_pddl_problem(num_locations, num_items, num_constraints)
+        domain = MANIPULATION_DOMAIN.get_domain_pddl()
+        useful = not optimal_solutions_are_equal(domain, problem, problem_without_constraints)
+
+    return problem
 
 # CLI Argument Parsing
 def main():
     parser = argparse.ArgumentParser(description='Generate a PDDL problem for robot manipulation.')
     parser.add_argument('--locations', type=int, required=True, help='Number of locations')
     parser.add_argument('--items', type=int, required=True, help='Number of items')
-    parser.add_argument('--constraints', type=int, required=True, help='Number of safety constraints')
+    parser.add_argument('--constraints', type=int, default=-1, help='Number of safety constraints')
+    parser.add_argument('--problems', type=int, default=1, help='Number of problems to generate')
     
     args = parser.parse_args()
-    
-    pddl_problem = generate_pddl_problem(args.locations, args.items, args.constraints)
-    print(pddl_problem)
+
+    os.makedirs("tmp", exist_ok=True)
+    for i in range(1, args.problems + 1):
+        problem = generate_one_useful_instance(args.locations, args.items, args.constraints)
+        
+        file_path = f"tmp/{i}.pddl"
+        with open(file_path, "w") as file:
+            file.write(problem)
+
 
 if __name__ == '__main__':
     main()

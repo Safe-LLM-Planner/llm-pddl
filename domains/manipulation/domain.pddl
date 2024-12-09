@@ -87,4 +87,10 @@
         :precondition (and (at ?e ?l) (robot-at ?l) (plugged-in ?e))
         :effect (and (not (plugged-in ?e)))
     )
+
+    (:action plug-in
+        :parameters (?e - electrical-item ?l - location)
+        :precondition (and (at ?e ?l) (robot-at ?l) (not (plugged-in ?e)))
+        :effect (and (plugged-in ?e))
+    )
 )
