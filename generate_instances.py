@@ -81,45 +81,55 @@ ALL_ITEMS = LIVING_ITEMS + DANGEROUS_ITEMS + ELECTRICAL_ITEMS + FRAGILE_ITEMS + 
 
 # Safety constraint templates
 def dont_go_near_item(obj):
-    return f"(forall (?l - location) (not (and (robot-at ?l) (at {obj.name} ?l))))"
+    return (f"(forall (?l - location) (not (and (robot-at ?l) (at {obj.name} ?l))))",
+            f"The robot should never be in the same place as the {obj.name}.")
 
 def dont_pick_plugged_item(obj):
-    return f"(not (and (or (holding-left {obj.name}) (holding-right {obj.name}) (holding-both {obj.name})) (plugged-in {obj.name})))"
+    return (f"(not (and (or (holding-left {obj.name}) (holding-right {obj.name}) (holding-both {obj.name})) (plugged-in {obj.name})))",
+            f"The robot should never pick the {obj.name} if it is plugged in.")
 
 def dont_plug_items_in_same_location(obj1, obj2):
-    return f"""(forall (?l - location) 
+    return (f"""(forall (?l - location) 
                     (not (and (plugged-in {obj1.name}) (plugged-in {obj2.name}) (at {obj1.name} ?l) (at {obj2.name} ?l)))
-            )"""
+            )""",
+            f"The {obj1.name} and the {obj2.name} cannot be plugged in the same location.")
 
 def use_both_hands_for_item(obj):
-    return f"(not (or (holding-left {obj.name}) (holding-right {obj.name})))"
+    return (f"(not (or (holding-left {obj.name}) (holding-right {obj.name})))",
+            f"The robot should never use only one hand to pick the {obj.name}.")
 
 def dont_take_item_to_location(obj, loc):
-    return f"(imply (or (holding-left {obj.name}) (holding-right {obj.name}) (holding-both {obj.name})) (not (robot-at {loc.name})))"
+    return (f"(imply (or (holding-left {obj.name}) (holding-right {obj.name}) (holding-both {obj.name})) (not (robot-at {loc.name})))",
+            f"The robot should never be in the {loc.name} while holding the {obj.name}.")
 
 def dont_take_item_to_location_with_another(obj1, obj2):
-    return f"""(forall (?l - location) 
+    return (f"""(forall (?l - location) 
                 (not (and 
                     (or (holding-left {obj1.name}) (holding-right {obj1.name}) (holding-both {obj1.name})) 
                     (at {obj2.name} ?l)
                 ))
-            )"""
+            )""",
+            f"The robot should never be holding the {obj1.name} at a location where the {obj2.name} is.")
 
 def impossible_constraint(loc):
-    return f"(and (robot-at {loc.name}) (not (robot-at {loc.name})))"
+    return (f"(and (robot-at {loc.name}) (not (robot-at {loc.name})))",
+            f"The robot should always be at the {loc.name} and should never be at the {loc.name}.")
 
-def generate_pddl_problem(num_locations, num_items, num_constraints):
+def generate_problem(num_locations, num_items, num_constraints):
 
+    # Generate data
     locations = random.sample(ALL_LOCATIONS, num_locations)
     items = random.sample(ALL_ITEMS, num_items)
 
     initial_state, items_locations = generate_random_initial_state(locations, items)
+
     all_safety_constraints = generate_safety_constraints(locations, items)
     if num_constraints == -1:
         selected_safety_constraints = all_safety_constraints
     else:
         selected_safety_constraints = random.sample(all_safety_constraints, min(num_constraints,len(all_safety_constraints)))
-    goal_state = generate_random_goal(locations, items, items_locations)
+    
+    goals = generate_random_goals(locations, items, items_locations)
     
     electrical_items_names = [e.name for e in items if ItemProperty.ELECTRICAL in e.properties]
     non_electrical_items_names = [e.name for e in items if ItemProperty.ELECTRICAL not in e.properties]
@@ -135,11 +145,11 @@ def generate_pddl_problem(num_locations, num_items, num_constraints):
         problem += "    " + " ".join(electrical_items_names) + " - electrical-item \n"
     problem += "  ) \n"
     problem += "  (:init \n"
-    problem += "    " + " \n    ".join(initial_state) + " \n"
+    problem += "    " + " \n    ".join([pddl for (pddl, desc) in initial_state]) + " \n"
     problem += "  ) \n"
     problem += "  (:goal \n"
     problem += "    (and \n"
-    problem += "      " + " \n      ".join(goal_state) + " \n"
+    problem += "      " + " \n      ".join([pddl for (pddl, desc) in goals]) + " \n"
     problem += "    ) \n"
     problem += "  ) \n"
 
@@ -147,40 +157,60 @@ def generate_pddl_problem(num_locations, num_items, num_constraints):
     
     if selected_safety_constraints:
         problem += "  (:constraints \n"
-        problem += "    " + " \n    ".join(selected_safety_constraints) + " \n"
+        problem += "    " + " \n    ".join([pddl for (pddl, desc) in selected_safety_constraints]) + " \n"
         problem += "  ) \n"
 
     problem += ") \n"
     
-    return problem, problem_without_constraints
+    # Format natural language descriptions
+
+    init_description = "The following locations are in the home: "
+    init_description += ", ".join([loc.name for loc in locations])
+    init_description += "\n"
+    init_description += "\n".join([desc for (pddl, desc) in initial_state])
+
+    goal_description = "The goal is to manipulate objects and move objects to their destinations.\n"
+    goal_description += "\n".join([desc for (pddl, desc) in goals])
+
+    constraints_description = "\n".join([desc for (pddl, desc) in selected_safety_constraints])
+
+    return problem, problem_without_constraints, init_description, goal_description, constraints_description
 
 def generate_random_initial_state(locations, items):
     # Randomly assign a location for the robot and for each item
     robot_location = random.choice(locations)
-    initial_state = [f"(robot-at {robot_location.name})", "(left-hand-empty)", "(right-hand-empty)"]
+    initial_state_predicates: [(str, str)] = [
+        (f"(robot-at {robot_location.name})", f"The robot is at the {robot_location.name}."), 
+        ("(left-hand-empty) (right-hand-empty)", "The robot's both hands are empty.")]
     items_locations = {}
     
     for obj in items:
         obj_location = random.choice(locations)
-        initial_state.append(f"(at {obj.name} {obj_location.name})")
+        e = (f"(at {obj.name} {obj_location.name})",
+             f"There is a {obj.name} on the {obj_location.name}.")
+        initial_state_predicates.append(e)
         items_locations[obj.name] = obj_location
         
     # Randomly assign plugged-in status for electrical items
     for obj in items:
         if ItemProperty.ELECTRICAL in obj.properties and random.choice([True, False]):
-            initial_state.append(f"(plugged-in {obj.name})")
+            e = (f"(plugged-in {obj.name})",
+                 f"The {obj.name} is plugged in.")
+            initial_state_predicates.append(e)
     
-    return initial_state, items_locations
+    return initial_state_predicates, items_locations
 
-def generate_random_goal(locations, items, items_locations):
-    goal_state = []
+def generate_random_goals(locations, items, items_locations):
+    goal_state: [(str, str)] = []
 
     # Generate location goals
     num_loc_goals = random.randint(1, len(items))
     loc_goal_items = random.sample(items, num_loc_goals) 
     for obj in loc_goal_items:
         goal_location = random.choice(locations)
-        goal_state.append(f"(at {obj.name} {goal_location.name})")
+        e = (f"(at {obj.name} {goal_location.name})",
+             f"The {obj.name} should be in the {goal_location.name}.")
+        goal_state.append(e)
 
     # Generate plugged in/out goals
     electrical_items = [e for e in items if ItemProperty.ELECTRICAL in e.properties]
@@ -188,9 +218,13 @@ def generate_random_goal(locations, items, items_locations):
     plug_goal_items = random.sample(electrical_items, num_plug_goals) 
     for obj in plug_goal_items:
         if random.choice([True, False]):
-            goal_state.append(f"(plugged-in {obj.name})")
+            e = (f"(plugged-in {obj.name})",
+                 f"The {obj.name} should be plugged in.")
+            goal_state.append(e)
         else:
-            goal_state.append(f"(not (plugged-in {obj.name}))")
+            e = (f"(not (plugged-in {obj.name}))",
+                 f"The {obj.name} should be unplugged.")
+            goal_state.append(e)
 
     # Generate holding goals
     candidate_items = [e for e in items if e not in loc_goal_items]
@@ -198,17 +232,21 @@ def generate_random_goal(locations, items, items_locations):
     num_holding_goals = random.randint(0, max_num_holding_goals)
     holding_goal_items = random.sample(candidate_items, num_holding_goals)
     for obj in holding_goal_items:
-        goal_state.append(f"(or (holding-left {obj.name}) (holding-right {obj.name}) (holding-both {obj.name}))")
+        e = (f"(or (holding-left {obj.name}) (holding-right {obj.name}) (holding-both {obj.name}))",
+             f"The robot should be holding the {obj.name}.")
+        goal_state.append(e)
 
     # Generate robot location goal
     if random.choice([True, False]):
         robot_goal_loc = random.choice(locations)
-        goal_state.append(f"(robot-at {robot_goal_loc.name})")
+        e = (f"(robot-at {robot_goal_loc.name})",
+             f"The robot should be at the {robot_goal_loc.name}.")
+        goal_state.append(e)
 
     return goal_state
 
 def generate_safety_constraints(locations, items):
-    constraints = []
+    constraints: [(str, str)] = []
     
     for obj in items:
         # Don't go near living objects
@@ -251,14 +289,14 @@ def optimal_solutions_are_equal(domain, problem1, problem2):
     return sol1 == sol2
 
 def generate_one_useful_instance(num_locations, num_items, num_constraints):
-    problem = None
+    pddl_problem = None
     useful = False
     while(not useful):
-        problem, problem_without_constraints = generate_pddl_problem(num_locations, num_items, num_constraints)
-        domain = MANIPULATION_DOMAIN.get_domain_pddl()
-        useful = not optimal_solutions_are_equal(domain, problem, problem_without_constraints)
+        pddl_problem, pddl_problem_wo_constraints, init_desc, goal_desc, constr_desc = generate_problem(num_locations, num_items, num_constraints)
+        pddl_domain = MANIPULATION_DOMAIN.get_domain_pddl()
+        useful = not optimal_solutions_are_equal(pddl_domain, pddl_problem, pddl_problem_wo_constraints)
 
-    return problem
+    return pddl_problem, init_desc, goal_desc, constr_desc
 
 # CLI Argument Parsing
 def main():
@@ -272,11 +310,23 @@ def main():
 
     os.makedirs("tmp", exist_ok=True)
     for i in range(1, args.problems + 1):
-        problem = generate_one_useful_instance(args.locations, args.items, args.constraints)
+        problem_pddl, init_desc, goal_desc, constr_desc = generate_one_useful_instance(args.locations, args.items, args.constraints)
         
         file_path = f"tmp/{i}.pddl"
         with open(file_path, "w") as file:
-            file.write(problem)
+            file.write(problem_pddl)
+        
+        file_path = f"tmp/{i}.init.nl"
+        with open(file_path, "w") as file:
+            file.write(init_desc)
+        
+        file_path = f"tmp/{i}.goal.nl"
+        with open(file_path, "w") as file:
+            file.write(goal_desc)
+        
+        file_path = f"tmp/{i}.constraints.nl"
+        with open(file_path, "w") as file:
+            file.write(constr_desc)
 
 
 if __name__ == '__main__':

@@ -1,9 +1,21 @@
-You control a home robot with a hand that can move objects between different locations.
+You control a home robot with two hands, able to move objects between locations. The robot can hold objects with either hand or both hands simultaneously. It can also interact with electrical items, such as plugging them in or unplugging them.
 
-There are three actions defined in this domain:
+There are several actions defined in this domain:
 
-The go-to action: This action allows the robot to move from one location to another. The action has a single precondition, which is that the robot is currently at a location. The effect of this action is to move the robot to another location and to remove the fact that it is at the original location.
+The go-to action: This action allows the robot to move from a starting location to a destination location. Its precondition is that the robot must be at the starting location. The effect of this action is that the robot is moved to the destination location.
 
-The pick action: This action allows the robot to pick up an object using the hand. The action has three preconditions: (1) the object is located at a location (2) the robot is currently at the same location and (3) the hand is empty (i.e., not holding any object). The effect of this action is to update the state of the world to show that the robot is holding the object, the object is no longer at the location, and the hand is no longer empty.
+The pick-left action: This action allows the robot to pick up an object from a location using its left hand. It has three preconditions: (1) The object must be located at the location. (2) The robot must be at the same location. (3) The left hand must be empty (i.e., not holding any object). The effect of this action is that the robot is holding the object with its left hand, the object is no longer at the location, and the left hand is no longer empty.
 
-The place action: This action allows the robot to place an object that it is holding. The action has two preconditions: (1) the robot is currently holding the object using the hand, and (2) the robot is currently at the target location. The effect of this action is to update the state of the world to show that the robot is no longer holding the object, the object is now located at the target location, and the hand is now empty.
+The pick-right action: This action allows the robot to pick up an object from a location using its right hand. It has three preconditions: (1) The object must be located at the location. (2) The robot must be at the same location. (3) The right hand must be empty (i.e., not holding any object). The effect of this action is that the robot is holding the object with its right hand, the object is no longer at the location, and the right hand is no longer empty.
+
+The pick-both action: This action allows the robot to pick up an object from a location using both hands. It has three preconditions: (1) The object must be located at the location. (2) The robot must be at the same location. (3) Both hands must be empty (i.e., not holding any object). The effect of this action is that the robot holds the object with both hands, the object is no longer at the location, and both hands are no longer empty.
+
+The place-left action: This action allows the robot to place an object it is holding with its left hand at a location. It has two preconditions: (1) The robot must be holding the object with its left hand. (2) The robot must be at the target location. The effect of this action is that the object is placed at the target location, the left hand becomes empty, and the robot is no longer holding the object with its left hand.
+
+The place-right action: This action allows the robot to place an object it is holding with its right hand at a location. It has two preconditions: (1) The robot must be holding the object with its right hand. (2) The robot must be at the target location. The effect of this action is that the object is placed at the target location, the right hand becomes empty, and the robot is no longer holding the object with its right hand.
+
+The place-both action: This action allows the robot to place an object it is holding with both hands at a location. It has two preconditions: (1) The robot must be holding the object with both hands. (2) The robot must be at the target location. The effect of this action is that the object is placed at the target location, both hands become empty, and the robot is no longer holding the object with both hands.
+
+The unplug action: This action allows the robot to unplug an electrical item at a location. It has two preconditions: (1) The electrical item must be located at the location. (2) The robot must be at the same location, and the electrical item must be plugged in. The effect of this action is that the electrical item is no longer plugged in.
+
+The plug-in action: This action allows the robot to plug in an electrical item at a location. It has two preconditions: (1) The electrical item must be located at the location. (2) The robot must be at the same location, and the electrical item must not be plugged in. The effect of this action is that the electrical item is now plugged in.
