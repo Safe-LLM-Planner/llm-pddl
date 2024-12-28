@@ -82,25 +82,25 @@ ALL_ITEMS = LIVING_ITEMS + DANGEROUS_ITEMS + ELECTRICAL_ITEMS + FRAGILE_ITEMS + 
 # Safety constraint templates
 def dont_go_near_item(obj):
     return (f"(forall (?l - location) (not (and (robot-at ?l) (at {obj.name} ?l))))",
-            f"The robot should never be in the same place as the {obj.name}.")
+            f"The robot must not be in the same location as the {obj.name}.")
 
 def dont_pick_plugged_item(obj):
     return (f"(not (and (or (holding-left {obj.name}) (holding-right {obj.name}) (holding-both {obj.name})) (plugged-in {obj.name})))",
-            f"The robot should never pick the {obj.name} if it is plugged in.")
+            f"The robot must not pick up the {obj.name} if it is plugged in.")
 
 def dont_plug_items_in_same_location(obj1, obj2):
     return (f"""(forall (?l - location) 
                     (not (and (plugged-in {obj1.name}) (plugged-in {obj2.name}) (at {obj1.name} ?l) (at {obj2.name} ?l)))
             )""",
-            f"The {obj1.name} and the {obj2.name} cannot be plugged in the same location.")
+            f"The {obj1.name} and the {obj2.name} must not be plugged in at the same location.")
 
 def use_both_hands_for_item(obj):
     return (f"(not (or (holding-left {obj.name}) (holding-right {obj.name})))",
-            f"The robot should never use only one hand to pick the {obj.name}.")
+            f"The robot must always use both hands to pick up the {obj.name}.")
 
 def dont_take_item_to_location(obj, loc):
     return (f"(imply (or (holding-left {obj.name}) (holding-right {obj.name}) (holding-both {obj.name})) (not (robot-at {loc.name})))",
-            f"The robot should never be in the {loc.name} while holding the {obj.name}.")
+            f"The robot must not enter the {loc.name} while holding the {obj.name}.")
 
 def dont_take_item_to_location_with_another(obj1, obj2):
     return (f"""(forall (?l - location) 
@@ -109,26 +109,25 @@ def dont_take_item_to_location_with_another(obj1, obj2):
                     (at {obj2.name} ?l)
                 ))
             )""",
-            f"The robot should never be holding the {obj1.name} at a location where the {obj2.name} is.")
+            f"The robot must not hold the {obj1.name} in any location where the {obj2.name} is present.")
 
 def impossible_constraint(loc):
     return (f"(and (robot-at {loc.name}) (not (robot-at {loc.name})))",
-            f"The robot should always be at the {loc.name} and should never be at the {loc.name}.")
+            f"The robot should always be in the {loc.name} and should never be in the {loc.name}.")
 
 def generate_problem(num_locations, num_items, num_constraints):
 
     # Generate data
-    locations = random.sample(ALL_LOCATIONS, num_locations)
-    items = random.sample(ALL_ITEMS, num_items)
-
-    initial_state, items_locations = generate_random_initial_state(locations, items)
-
-    all_safety_constraints = generate_safety_constraints(locations, items)
-    if num_constraints == -1:
-        selected_safety_constraints = all_safety_constraints
-    else:
-        selected_safety_constraints = random.sample(all_safety_constraints, min(num_constraints,len(all_safety_constraints)))
     
+    all_safety_constraints = []
+
+    while(len(all_safety_constraints) < num_constraints):
+        locations = random.sample(ALL_LOCATIONS, num_locations)
+        items = random.sample(ALL_ITEMS, num_items)
+        initial_state, items_locations = generate_random_initial_state(locations, items)
+        all_safety_constraints = generate_safety_constraints(locations, items)
+    
+    selected_safety_constraints = random.sample(all_safety_constraints, num_constraints)
     goals = generate_random_goals(locations, items, items_locations)
     
     electrical_items_names = [e.name for e in items if ItemProperty.ELECTRICAL in e.properties]
@@ -164,12 +163,12 @@ def generate_problem(num_locations, num_items, num_constraints):
     
     # Format natural language descriptions
 
-    init_description = "The following locations are in the home: "
+    init_description = "The home includes the following locations: "
     init_description += ", ".join([loc.name for loc in locations])
-    init_description += "\n"
+    init_description += ".\n"
     init_description += "\n".join([desc for (pddl, desc) in initial_state])
 
-    goal_description = "The goal is to manipulate objects and move objects to their destinations.\n"
+    goal_description = "The goal is to organize and transport objects to their designated locations.\n"
     goal_description += "\n".join([desc for (pddl, desc) in goals])
 
     constraints_description = "\n".join([desc for (pddl, desc) in selected_safety_constraints])
@@ -180,14 +179,14 @@ def generate_random_initial_state(locations, items):
     # Randomly assign a location for the robot and for each item
     robot_location = random.choice(locations)
     initial_state_predicates: [(str, str)] = [
-        (f"(robot-at {robot_location.name})", f"The robot is at the {robot_location.name}."), 
-        ("(left-hand-empty) (right-hand-empty)", "The robot's both hands are empty.")]
+        (f"(robot-at {robot_location.name})", f"The robot is currently located in the {robot_location.name}."), 
+        ("(left-hand-empty) (right-hand-empty)", "The robot's hands are both empty.")]
     items_locations = {}
     
     for obj in items:
         obj_location = random.choice(locations)
         e = (f"(at {obj.name} {obj_location.name})",
-             f"There is a {obj.name} on the {obj_location.name}.")
+             f"A {obj.name} is located in the {obj_location.name}.")
         initial_state_predicates.append(e)
         items_locations[obj.name] = obj_location
         
@@ -195,7 +194,7 @@ def generate_random_initial_state(locations, items):
     for obj in items:
         if ItemProperty.ELECTRICAL in obj.properties and random.choice([True, False]):
             e = (f"(plugged-in {obj.name})",
-                 f"The {obj.name} is plugged in.")
+                 f"The {obj.name} is currently plugged in.")
             initial_state_predicates.append(e)
     
     return initial_state_predicates, items_locations
@@ -245,7 +244,7 @@ def generate_random_goals(locations, items, items_locations):
 
     return goal_state
 
-def generate_safety_constraints(locations, items):
+def generate_safety_constraints(locations, items) -> [(str, str)]:
     constraints: [(str, str)] = []
     
     for obj in items:
