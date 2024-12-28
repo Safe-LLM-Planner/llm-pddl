@@ -115,7 +115,7 @@ def impossible_constraint(loc):
     return (f"(and (robot-at {loc.name}) (not (robot-at {loc.name})))",
             f"The robot should always be in the {loc.name} and should never be in the {loc.name}.")
 
-def generate_problem(num_locations, num_items, num_constraints):
+def generate_problem(num_locations, num_items, num_goals, num_constraints):
 
     # Generate data
     
@@ -128,7 +128,11 @@ def generate_problem(num_locations, num_items, num_constraints):
         all_safety_constraints = generate_safety_constraints(locations, items)
     
     selected_safety_constraints = random.sample(all_safety_constraints, num_constraints)
-    goals = generate_random_goals(locations, items, items_locations)
+    goals = generate_goals(locations, items, items_locations)
+    if num_goals == -1:
+        selected_goals = goals
+    else:
+        selected_goals = random.sample(goals, num_goals)
     
     electrical_items_names = [e.name for e in items if ItemProperty.ELECTRICAL in e.properties]
     non_electrical_items_names = [e.name for e in items if ItemProperty.ELECTRICAL not in e.properties]
@@ -148,7 +152,7 @@ def generate_problem(num_locations, num_items, num_constraints):
     problem += "  ) \n"
     problem += "  (:goal \n"
     problem += "    (and \n"
-    problem += "      " + " \n      ".join([pddl for (pddl, desc) in goals]) + " \n"
+    problem += "      " + " \n      ".join([pddl for (pddl, desc) in selected_goals]) + " \n"
     problem += "    ) \n"
     problem += "  ) \n"
 
@@ -169,7 +173,7 @@ def generate_problem(num_locations, num_items, num_constraints):
     init_description += "\n".join([desc for (pddl, desc) in initial_state])
 
     goal_description = "The goal is to organize and transport objects to their designated locations.\n"
-    goal_description += "\n".join([desc for (pddl, desc) in goals])
+    goal_description += "\n".join([desc for (pddl, desc) in selected_goals])
 
     constraints_description = "\n".join([desc for (pddl, desc) in selected_safety_constraints])
 
@@ -199,12 +203,19 @@ def generate_random_initial_state(locations, items):
     
     return initial_state_predicates, items_locations
 
-def generate_random_goals(locations, items, items_locations):
+def generate_goals(locations, items, items_locations):
     goal_state: [(str, str)] = []
 
+    # Generate holding goals
+    num_holding_goals = random.randint(0, min(2,len(items)))
+    holding_goal_items = random.sample(items, num_holding_goals)
+    for obj in holding_goal_items:
+        e = (f"(or (holding-left {obj.name}) (holding-right {obj.name}) (holding-both {obj.name}))",
+             f"The robot should be holding the {obj.name}.")
+        goal_state.append(e)
+
     # Generate location goals
-    num_loc_goals = random.randint(1, len(items))
-    loc_goal_items = random.sample(items, num_loc_goals) 
+    loc_goal_items = [e for e in items if e not in holding_goal_items]
     for obj in loc_goal_items:
         goal_location = random.choice(locations)
         e = (f"(at {obj.name} {goal_location.name})",
@@ -213,9 +224,7 @@ def generate_random_goals(locations, items, items_locations):
 
     # Generate plugged in/out goals
     electrical_items = [e for e in items if ItemProperty.ELECTRICAL in e.properties]
-    num_plug_goals = random.randint(0, len(electrical_items))
-    plug_goal_items = random.sample(electrical_items, num_plug_goals) 
-    for obj in plug_goal_items:
+    for obj in electrical_items:
         if random.choice([True, False]):
             e = (f"(plugged-in {obj.name})",
                  f"The {obj.name} should be plugged in.")
@@ -225,22 +234,11 @@ def generate_random_goals(locations, items, items_locations):
                  f"The {obj.name} should be unplugged.")
             goal_state.append(e)
 
-    # Generate holding goals
-    candidate_items = [e for e in items if e not in loc_goal_items]
-    max_num_holding_goals = min(len(candidate_items), 2)
-    num_holding_goals = random.randint(0, max_num_holding_goals)
-    holding_goal_items = random.sample(candidate_items, num_holding_goals)
-    for obj in holding_goal_items:
-        e = (f"(or (holding-left {obj.name}) (holding-right {obj.name}) (holding-both {obj.name}))",
-             f"The robot should be holding the {obj.name}.")
-        goal_state.append(e)
-
     # Generate robot location goal
-    if random.choice([True, False]):
-        robot_goal_loc = random.choice(locations)
-        e = (f"(robot-at {robot_goal_loc.name})",
-             f"The robot should be at the {robot_goal_loc.name}.")
-        goal_state.append(e)
+    robot_goal_loc = random.choice(locations)
+    e = (f"(robot-at {robot_goal_loc.name})",
+            f"The robot should be at the {robot_goal_loc.name}.")
+    goal_state.append(e)
 
     return goal_state
 
@@ -280,20 +278,17 @@ def generate_safety_constraints(locations, items) -> [(str, str)]:
 
     return constraints
 
-def optimal_solutions_are_equal(domain, problem1, problem2):
-
-    sol1 = planners.run_fast_downward_planner(domain, problem1, optimality=True)
-    sol2 = planners.run_fast_downward_planner(domain, problem2, optimality=True)
-
-    return sol1 == sol2
-
-def generate_one_useful_instance(num_locations, num_items, num_constraints):
+def generate_one_useful_instance(num_locations, num_items, num_goals, num_constraints):
     pddl_problem = None
     useful = False
     while(not useful):
-        pddl_problem, pddl_problem_wo_constraints, init_desc, goal_desc, constr_desc = generate_problem(num_locations, num_items, num_constraints)
+        pddl_problem, pddl_problem_wo_constraints, init_desc, goal_desc, constr_desc = generate_problem(num_locations, num_items, num_goals, num_constraints)
         pddl_domain = MANIPULATION_DOMAIN.get_domain_pddl()
-        useful = not optimal_solutions_are_equal(pddl_domain, pddl_problem, pddl_problem_wo_constraints)
+        sol1 = planners.run_fast_downward_planner(pddl_domain, pddl_problem, optimality=True)
+        sol2 = planners.run_fast_downward_planner(pddl_domain, pddl_problem_wo_constraints, optimality=True)
+        sol1_length = 0 if sol1 is None else len(sol1.splitlines())
+        sol2_length = 0 if sol2 is None else len(sol2.splitlines())
+        useful = sol1_length > 1 and sol1_length != sol2_length
 
     return pddl_problem, init_desc, goal_desc, constr_desc
 
@@ -303,13 +298,14 @@ def main():
     parser.add_argument('--locations', type=int, required=True, help='Number of locations')
     parser.add_argument('--items', type=int, required=True, help='Number of items')
     parser.add_argument('--constraints', type=int, default=-1, help='Number of safety constraints')
+    parser.add_argument('--goals', type=int, default=-1, help='Number of goals')
     parser.add_argument('--problems', type=int, default=1, help='Number of problems to generate')
     
     args = parser.parse_args()
 
     os.makedirs("tmp", exist_ok=True)
     for i in range(1, args.problems + 1):
-        problem_pddl, init_desc, goal_desc, constr_desc = generate_one_useful_instance(args.locations, args.items, args.constraints)
+        problem_pddl, init_desc, goal_desc, constr_desc = generate_one_useful_instance(args.locations, args.items, args.goals, args.constraints)
         
         file_path = f"tmp/{i}.pddl"
         with open(file_path, "w") as file:
