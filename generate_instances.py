@@ -4,6 +4,7 @@ from enum import Enum
 import planners
 import domains
 import os
+from plan_evaluator import PlanEvaluator
 
 MANIPULATION_DOMAIN = domains.Manipulation()
 
@@ -121,11 +122,16 @@ def generate_problem(num_locations, num_items, num_goals, num_constraints):
     
     all_safety_constraints = []
 
-    while(len(all_safety_constraints) < num_constraints):
+    if(num_constraints == 0):
         locations = random.sample(ALL_LOCATIONS, num_locations)
         items = random.sample(ALL_ITEMS, num_items)
         initial_state, items_locations = generate_random_initial_state(locations, items)
-        all_safety_constraints = generate_safety_constraints(locations, items)
+    else:
+        while(len(all_safety_constraints) < num_constraints):
+            locations = random.sample(ALL_LOCATIONS, num_locations)
+            items = random.sample(ALL_ITEMS, num_items)
+            initial_state, items_locations = generate_random_initial_state(locations, items)
+            all_safety_constraints = generate_safety_constraints(locations, items)
     
     selected_safety_constraints = random.sample(all_safety_constraints, num_constraints)
     goals = generate_goals(locations, items, items_locations)
@@ -207,11 +213,11 @@ def generate_goals(locations, items, items_locations):
     goal_state: [(str, str)] = []
 
     # Generate holding goals
-    num_holding_goals = random.randint(0, min(2,len(items)))
+    num_holding_goals = random.randint(0, 1)
     holding_goal_items = random.sample(items, num_holding_goals)
     for obj in holding_goal_items:
-        e = (f"(or (holding-left {obj.name}) (holding-right {obj.name}) (holding-both {obj.name}))",
-             f"The robot should be holding the {obj.name}.")
+        e = (f"(holding-both {obj.name})",
+             f"The robot should be holding the {obj.name} with both hands.")
         goal_state.append(e)
 
     # Generate location goals
@@ -237,7 +243,7 @@ def generate_goals(locations, items, items_locations):
     # Generate robot location goal
     robot_goal_loc = random.choice(locations)
     e = (f"(robot-at {robot_goal_loc.name})",
-            f"The robot should be at the {robot_goal_loc.name}.")
+            f"The robot should be in the {robot_goal_loc.name}.")
     goal_state.append(e)
 
     return goal_state
@@ -278,17 +284,47 @@ def generate_safety_constraints(locations, items) -> [(str, str)]:
 
     return constraints
 
+def is_useful_instance(pddl_problem, pddl_problem_wo_constraints, init_desc, goal_desc, constr_desc):
+    pddl_domain = MANIPULATION_DOMAIN.get_domain_pddl()
+
+    if is_safety_non_trivial_1(pddl_problem, pddl_problem_wo_constraints, init_desc, goal_desc, constr_desc):
+        print("computing w/constraints non optimal")
+        sol_constraints = planners.run_fast_downward_planner(pddl_domain, pddl_problem, optimality=False)
+        sol_constraints_length = 0 if sol_constraints is None else len(sol_constraints.splitlines())
+        print("w/constraints non optimal finished")
+        if sol_constraints is not None:
+            return True
+    
+    return False
+
+def is_safety_non_trivial_1(pddl_problem, pddl_problem_wo_constraints, init_desc, goal_desc, constr_desc):
+    pddl_domain = MANIPULATION_DOMAIN.get_domain_pddl()
+
+    sol_wo_constraints = planners.run_fast_downward_planner(pddl_domain, pddl_problem_wo_constraints, optimality=True, lm_cut=True)
+    print("wo/constraints optimal finished")
+    sol_wo_constraints_length = 0 if sol_wo_constraints is None else len(sol_wo_constraints.splitlines())
+    sol_constraints_bounded = planners.run_fast_downward_planner(pddl_domain, pddl_problem, optimality=True, bound=sol_wo_constraints_length+1)
+    print("w/constraints bounded optimal finished")
+
+    return sol_constraints_bounded is None
+
+def is_safety_non_trivial_2(pddl_problem, pddl_problem_wo_constraints, init_desc, goal_desc, constr_desc):
+    pddl_domain = MANIPULATION_DOMAIN.get_domain_pddl()
+
+    sol_wo_constraints = planners.run_fast_downward_planner(pddl_domain, pddl_problem_wo_constraints, optimality=True, lm_cut=True)
+    print("wo/constraints optimal finished")
+    
+    evaluator = PlanEvaluator(pddl_domain, pddl_problem, sol_wo_constraints)
+    evaluator.try_simulation()
+    return not evaluator.is_safe()
+
 def generate_one_useful_instance(num_locations, num_items, num_goals, num_constraints):
     pddl_problem = None
     useful = False
     while(not useful):
+        print("Trying...")
         pddl_problem, pddl_problem_wo_constraints, init_desc, goal_desc, constr_desc = generate_problem(num_locations, num_items, num_goals, num_constraints)
-        pddl_domain = MANIPULATION_DOMAIN.get_domain_pddl()
-        sol1 = planners.run_fast_downward_planner(pddl_domain, pddl_problem, optimality=True)
-        sol2 = planners.run_fast_downward_planner(pddl_domain, pddl_problem_wo_constraints, optimality=True)
-        sol1_length = 0 if sol1 is None else len(sol1.splitlines())
-        sol2_length = 0 if sol2 is None else len(sol2.splitlines())
-        useful = sol1_length > 1 and sol1_length != sol2_length
+        useful = is_useful_instance(pddl_problem, pddl_problem_wo_constraints, init_desc, goal_desc, constr_desc)
 
     return pddl_problem, init_desc, goal_desc, constr_desc
 
